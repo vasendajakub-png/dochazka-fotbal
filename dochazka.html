@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <title>Docházka – fotbalový klub</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { font-family: Arial, sans-serif; margin: 10px; }
+    h1, h2, h3 { margin-top: 20px; }
+    input, select, button { margin: 5px 0; padding: 8px; width: 100%; }
+    button { background: #2e7d32; color: white; border: none; border-radius: 6px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 10px; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+    th { background: #f0f0f0; }
+    .card { border: 1px solid #ddd; border-radius: 10px; padding: 10px; margin-top: 15px; }
+    @media (min-width: 700px) {
+      input, select, button { width: auto; }
+    }
+  </style>
+</head>
+<body>
+
+<h1>⚽ Docházkový systém</h1>
+
+<div class="card">
+<h2>1️⃣ Hráči</h2>
+<input id="playerName" placeholder="Jméno hráče" />
+<button onclick="addPlayer()">Přidat hráče</button>
+<ul id="playerList"></ul>
+</div>
+
+<div class="card">
+<h2>2️⃣ Události</h2>
+<input id="eventName" placeholder="Název (např. Trénink)" />
+<select id="eventType">
+  <option value="Trénink">Trénink</option>
+  <option value="Zápas">Zápas</option>
+</select>
+<input type="date" id="eventDate" />
+<button onclick="addEvent()">Vytvořit událost</button>
+<ul id="eventList"></ul>
+</div>
+
+<div class="card">
+<h2>3️⃣ Docházka</h2>
+<div id="attendance"></div>
+</div>
+
+<div class="card">
+<h2>4️⃣ Statistiky</h2>
+<label>Měsíc:</label>
+<input type="month" id="monthFilter" onchange="renderSummary()" />
+<div id="summary"></div>
+</div>
+
+<script>
+let players = JSON.parse(localStorage.getItem('players')) || [];
+let events = JSON.parse(localStorage.getItem('events')) || [];
+
+function save() {
+  localStorage.setItem('players', JSON.stringify(players));
+  localStorage.setItem('events', JSON.stringify(events));
+}
+
+function addPlayer() {
+  const name = playerName.value.trim();
+  if (!name) return;
+  players.push(name);
+  playerName.value = '';
+  save();
+  render();
+}
+
+function addEvent() {
+  const name = eventName.value;
+  const type = eventType.value;
+  const date = eventDate.value;
+  if (!name || !date) return;
+  events.push({ name, type, date, attendance: {} });
+  eventName.value = '';
+  save();
+  render();
+}
+
+function render() {
+  playerList.innerHTML = players.map(p => `<li>${p}</li>`).join('');
+
+  eventList.innerHTML = events.map((e, i) => 
+    `<li><button onclick="showAttendance(${i})">${e.date} – ${e.name} (${e.type})</button></li>`
+  ).join('');
+
+  renderSummary();
+}
+
+function showAttendance(index) {
+  const e = events[index];
+  let html = `<h3>${e.date} – ${e.name} (${e.type})</h3><table><tr><th>Hráč</th><th>Přítomen</th></tr>`;
+
+  players.forEach(p => {
+    const checked = e.attendance[p] ? 'checked' : '';
+    html += `<tr><td>${p}</td><td><input type="checkbox" ${checked} onchange="toggleAttendance(${index}, '${p}', this.checked)"></td></tr>`;
+  });
+
+  html += '</table>';
+  attendance.innerHTML = html;
+}
+
+function toggleAttendance(eventIndex, player, value) {
+  events[eventIndex].attendance[player] = value;
+  save();
+  renderSummary();
+}
+
+function renderSummary() {
+  const month = document.getElementById('monthFilter').value;
+  let filteredEvents = events;
+
+  if (month) {
+    filteredEvents = events.filter(e => e.date.startsWith(month));
+  }
+
+  let html = '<table><tr><th>Hráč</th><th>Tréninky (%)</th><th>Zápasy (%)</th><th>Celkem (%)</th></tr>';
+
+  players.forEach(p => {
+    const trainEvents = filteredEvents.filter(e => e.type === 'Trénink');
+    const matchEvents = filteredEvents.filter(e => e.type === 'Zápas');
+
+    const trainPresent = trainEvents.filter(e => e.attendance[p]).length;
+    const matchPresent = matchEvents.filter(e => e.attendance[p]).length;
+
+    const trainPct = trainEvents.length ? Math.round(trainPresent / trainEvents.length * 100) : 0;
+    const matchPct = matchEvents.length ? Math.round(matchPresent / matchEvents.length * 100) : 0;
+    const totalPct = filteredEvents.length ? Math.round((trainPresent + matchPresent) / filteredEvents.length * 100) : 0;
+
+    html += `<tr><td>${p}</td><td>${trainPct}</td><td>${matchPct}</td><td>${totalPct}</td></tr>`;
+  });
+
+  html += '</table>';
+  summary.innerHTML = html;
+}
+
+render();
+</script>
+
+</body>
+</html>
