@@ -8,7 +8,8 @@
     body { font-family: Arial, sans-serif; margin: 10px; }
     h1, h2, h3 { margin-top: 20px; }
     input, select, button { margin: 5px 0; padding: 8px; width: 100%; }
-    button { background: #2e7d32; color: white; border: none; border-radius: 6px; }
+    button { background: #2e7d32; color: white; border: none; border-radius: 6px; cursor: pointer; }
+    button.delete { background: #c62828; }
     table { border-collapse: collapse; width: 100%; margin-top: 10px; }
     th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
     th { background: #f0f0f0; }
@@ -50,12 +51,15 @@
 <h2>4️⃣ Statistiky</h2>
 <label>Měsíc:</label>
 <input type="month" id="monthFilter" onchange="renderSummary()" />
+<button onclick="exportToExcel()">📤 Export do Excelu</button>
 <div id="summary"></div>
 </div>
 
 <script>
 let players = JSON.parse(localStorage.getItem('players')) || [];
 let events = JSON.parse(localStorage.getItem('events')) || [];
+
+const STATUS = ['Přítomen', 'Omluven', 'Neomluven', 'Zranění'];
 
 function save() {
   localStorage.setItem('players', JSON.stringify(players));
@@ -67,6 +71,15 @@ function addPlayer() {
   if (!name) return;
   players.push(name);
   playerName.value = '';
+  save();
+  render();
+}
+
+function deletePlayer(index) {
+  if (!confirm('Opravdu smazat hráče?')) return;
+  const player = players[index];
+  players.splice(index, 1);
+  events.forEach(e => delete e.attendance[player]);
   save();
   render();
 }
@@ -83,7 +96,9 @@ function addEvent() {
 }
 
 function render() {
-  playerList.innerHTML = players.map(p => `<li>${p}</li>`).join('');
+  playerList.innerHTML = players.map((p, i) => 
+    `<li>${p} <button class="delete" onclick="deletePlayer(${i})">✖</button></li>`
+  ).join('');
 
   eventList.innerHTML = events.map((e, i) => 
     `<li><button onclick="showAttendance(${i})">${e.date} – ${e.name} (${e.type})</button></li>`
@@ -94,49 +109,65 @@ function render() {
 
 function showAttendance(index) {
   const e = events[index];
-  let html = `<h3>${e.date} – ${e.name} (${e.type})</h3><table><tr><th>Hráč</th><th>Přítomen</th></tr>`;
+  let html = `<h3>${e.date} – ${e.name} (${e.type})</h3><table><tr><th>Hráč</th><th>Stav</th></tr>`;
 
   players.forEach(p => {
-    const checked = e.attendance[p] ? 'checked' : '';
-    html += `<tr><td>${p}</td><td><input type="checkbox" ${checked} onchange="toggleAttendance(${index}, '${p}', this.checked)"></td></tr>`;
+    const current = e.attendance[p] || '';
+    html += `<tr><td>${p}</td><td><select onchange="setAttendance(${index}, '${p}', this.value)">
+      <option value="">—</option>
+      ${STATUS.map(s => `<option ${s===current?'selected':''}>${s}</option>`).join('')}
+    </select></td></tr>`;
   });
 
   html += '</table>';
   attendance.innerHTML = html;
 }
 
-function toggleAttendance(eventIndex, player, value) {
-  events[eventIndex].attendance[player] = value;
+function setAttendance(eventIndex, player, status) {
+  events[eventIndex].attendance[player] = status;
   save();
   renderSummary();
 }
 
 function renderSummary() {
-  const month = document.getElementById('monthFilter').value;
-  let filteredEvents = events;
-
-  if (month) {
-    filteredEvents = events.filter(e => e.date.startsWith(month));
-  }
+  const month = monthFilter.value;
+  let filteredEvents = month ? events.filter(e => e.date.startsWith(month)) : events;
 
   let html = '<table><tr><th>Hráč</th><th>Tréninky (%)</th><th>Zápasy (%)</th><th>Celkem (%)</th></tr>';
 
   players.forEach(p => {
-    const trainEvents = filteredEvents.filter(e => e.type === 'Trénink');
-    const matchEvents = filteredEvents.filter(e => e.type === 'Zápas');
+    const valid = s => s === 'Přítomen';
+    const train = filteredEvents.filter(e => e.type === 'Trénink');
+    const match = filteredEvents.filter(e => e.type === 'Zápas');
 
-    const trainPresent = trainEvents.filter(e => e.attendance[p]).length;
-    const matchPresent = matchEvents.filter(e => e.attendance[p]).length;
+    const tp = train.filter(e => valid(e.attendance[p])).length;
+    const mp = match.filter(e => valid(e.attendance[p])).length;
 
-    const trainPct = trainEvents.length ? Math.round(trainPresent / trainEvents.length * 100) : 0;
-    const matchPct = matchEvents.length ? Math.round(matchPresent / matchEvents.length * 100) : 0;
-    const totalPct = filteredEvents.length ? Math.round((trainPresent + matchPresent) / filteredEvents.length * 100) : 0;
+    const tPct = train.length ? Math.round(tp / train.length * 100) : 0;
+    const mPct = match.length ? Math.round(mp / match.length * 100) : 0;
+    const totalPct = filteredEvents.length ? Math.round((tp + mp) / filteredEvents.length * 100) : 0;
 
-    html += `<tr><td>${p}</td><td>${trainPct}</td><td>${matchPct}</td><td>${totalPct}</td></tr>`;
+    html += `<tr><td>${p}</td><td>${tPct}</td><td>${mPct}</td><td>${totalPct}</td></tr>`;
   });
 
   html += '</table>';
   summary.innerHTML = html;
+}
+
+function exportToExcel() {
+  let rows = [['Datum','Událost','Typ','Hráč','Stav']];
+  events.forEach(e => {
+    players.forEach(p => {
+      rows.push([e.date, e.name, e.type, p, e.attendance[p] || '']);
+    });
+  });
+
+  let csv = rows.map(r => r.join(';')).join('\n');
+  let blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  let link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = 'dochazka.csv';
+  link.click();
 }
 
 render();
